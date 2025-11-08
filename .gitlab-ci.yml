@@ -1,0 +1,85 @@
+
+# Configuration GitLab CI/CD pour Ansible
+
+stages:
+  - validate
+  - test
+  - deploy
+
+variables:
+  ANSIBLE_FORCE_COLOR: "true"
+
+# Template pour installer Ansible
+.install_ansible: &install_ansible
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y ansible
+
+# Stage 1: Valider la syntaxe
+validate_syntax:
+  stage: validate
+  image: ubuntu:22.04
+  <<: *install_ansible
+  script:
+    - echo "Ì¥ç Validation de la syntaxe du playbook..."
+    - cd ansible
+    - ansible-playbook playbook.yml --syntax-check
+    - echo "‚úÖ Syntaxe valide!"
+  only:
+    - main
+    - merge_requests
+
+# Stage 2: Tester le playbook
+test_playbook:
+  stage: test
+  image: ubuntu:22.04
+  <<: *install_ansible
+  script:
+    - echo "Ì∑™ Test d'ex√©cution du playbook..."
+    - cd ansible
+    - ansible-playbook playbook.yml --check --connection=local -v
+    - echo "‚úÖ Test r√©ussi!"
+  only:
+    - main
+    - merge_requests
+  allow_failure: true
+
+# Stage 3: Ex√©cuter le playbook
+deploy_apache:
+  stage: deploy
+  image: ubuntu:22.04
+  <<: *install_ansible
+  script:
+    - echo "Ì∫Ä D√©ploiement d'Apache..."
+    - cd ansible
+    - ansible-playbook playbook.yml --connection=local
+    - echo "‚úÖ Apache install√©!"
+    - systemctl status apache2 || true
+    - curl -I http://localhost || true
+  only:
+    - main
+  when: manual  # N√©cessite une validation manuelle
+
+# Job optionnel: V√©rifier Apache
+verify_apache:
+  stage: deploy
+  image: ubuntu:22.04
+  script:
+    - echo "Ì¥é V√©rification d'Apache..."
+    - apt-get update -qq
+    - apt-get install -y curl
+    - cd ansible
+    - apt-get install -y ansible
+    - ansible-playbook playbook.yml --connection=local
+    - sleep 5
+    - |
+      if curl -s http://localhost > /dev/null; then
+        echo "‚úÖ Apache r√©pond correctement!"
+      else
+        echo "‚ùå Apache ne r√©pond pas"
+        exit 1
+      fi
+  only:
+    - main
+  dependencies:
+    - deploy_apache
